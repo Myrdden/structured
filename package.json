@@ -1,0 +1,12 @@
+{
+	"name": "structured",
+	"version": "1.0.0",
+	"description": "",
+	"author": "Olivia Taliesin",
+	"license": "MIT",
+
+	"type": "module",
+	"main": "struct.js",
+	"module": "struct.js",
+	"types": "struct.d.ts"
+}
