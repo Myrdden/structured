@@ -85,7 +85,7 @@ type StructTemplate <
 	static?: Partial<Static>;
 };
 
-export type Struct <T extends object, ConstantKeys extends PropertyKey = '', Static extends object = {}> = Show<({
+export type Struct <T extends object, ConstantKeys extends PropertyKey = '', Static extends object = {}> = ({
 	(values?: Partial<Omit<T, ConstantKeys>>): T;
 } & Readonly<Static>)>;
 
@@ -111,6 +111,9 @@ export const Trait: <
 	Method extends object,
 	Extends extends StructExtends
 > (template: StructTemplate<Assign, Getter, Setter, Define, Constant, Computed, Method, Extends>) => Compose<Assign, Getter, Setter, Define, Constant, Computed, Method, Extends>;
+	new (values?: Partial<Omit<T, ConstantKeys>>): T;
+	prototype: T;
+} & Readonly<Static>);
 
 /** Special implementation of JSON.stringify for use with Structs */
 export const stringify: typeof JSON.stringify;

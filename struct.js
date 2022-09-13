@@ -3,6 +3,8 @@ const Constructor = Symbol();
 const Extending = Symbol();
 const Values = Symbol();
 const Template = Symbol();
+const Defaults = Symbol();
+const Size = Symbol();
 
 /**@typedef {(...args: any) => any} func*/
 /**@typedef {(string | symbol)} key*/
@@ -13,7 +15,7 @@ const Template = Symbol();
 	default?: any;
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; }} Trait*/
+/**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; [Defaults]: Record<key, any>; }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
@@ -89,6 +91,8 @@ export const stringify = (/**@type Instance*/ thing, /**@type any*/ replacer, /*
 };
 
 export const inspect = (/**@type any*/ thing) => JSON.parse(stringify(thing));
+/**@template T @returns T*/
+const frozen = (/**@type T*/ obj) => (Object.setPrototypeOf(obj, null), Object.freeze(obj));
 
 const compose = (/**@type any*/ definition) => {
 	/**@type Set<key>*/
@@ -97,6 +101,10 @@ const compose = (/**@type any*/ definition) => {
 	const properties = Object.create(null);
 	/**@type Map<key, TemplateDesc>*/
 	const template = new Map();
+	/**@type Record<key, any>*/
+	const defaults = Object.create(null);
+	defaults[Size] = 0;
+	let needsValues = false;
 	/**@type Set<Either>*/
 	const extending = new Set();
 	/**@type Set<key>*/
@@ -120,8 +128,8 @@ const compose = (/**@type any*/ definition) => {
 		let temp = template.get(key);
 		if (temp != null) {
 			if (temp.type !== 'constant') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'constant\'.'); return; }
-			temp = { type: 'constant', desc, source: [ ...temp.source, prototype ] };
-		} else temp = { type: 'constant', desc, source: [ prototype ] };
+			temp = frozen({ type: 'constant', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'constant', desc, source: [ prototype ] });
 		template.set(key, temp);
 
 		properties[key] = desc;
@@ -141,8 +149,8 @@ const compose = (/**@type any*/ definition) => {
 		let temp = template.get(key);
 		if (temp != null) {
 			if (temp.type !== 'define') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'define\'.'); return; }
-			temp = { type: 'define', desc, source: [ ...temp.source, prototype ] };
-		} else temp = { type: 'define', desc, source: [ prototype ] };
+			temp = frozen({ type: 'define', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'define', desc, source: [ prototype ] });
 		template.set(key, temp);
 
 		properties[key] = desc;
@@ -156,7 +164,7 @@ const compose = (/**@type any*/ definition) => {
 		let desc;
 		if (fn == null) {
 			desc = {
-				get: () => { throw new Error('Struct does not provide an extendation for computed property \'' + String(key) + '\''); },
+				get: () => { throw new Error('Struct does not provide an implementation for computed property \'' + String(key) + '\''); },
 				enumerable: true
 			};
 		} else if (typeof fn === 'function') {
@@ -169,8 +177,8 @@ const compose = (/**@type any*/ definition) => {
 		let temp = template.get(key);
 		if (temp != null) {
 			if (temp.type !== 'computed') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'computed\'.'); return; }
-			temp = { type: 'computed', desc, source: [ ...temp.source, prototype ] };
-		} else temp = { type: 'computed', desc, source: [ prototype ] };
+			temp = frozen({ type: 'computed', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'computed', desc, source: [ prototype ] });
 		template.set(key, temp);
 
 		properties[key] = desc;
@@ -217,12 +225,14 @@ const compose = (/**@type any*/ definition) => {
 		let temp = template.get(key);
 		if (temp != null) {
 			if (temp.type !== 'assign') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'assign\'.'); return; }
-			temp = { type: 'assign', desc, default: temp.default, source: [ ...temp.source, prototype ] };
-		} else temp = { type: 'assign', desc, source: [ prototype ] };
-		if (props.default !== undefined) temp.default = props.default;
+			temp = frozen({ type: 'assign', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'assign', desc, source: [ prototype ] });
 		template.set(key, temp);
 
+		if (props.default !== undefined) defaults[key] = props.default, defaults[Size]++;
+
 		properties[key] = desc;
+		needsValues = true;
 	};
 
 	/**@type Record<PropertyKey, AssignmentDef>*/
@@ -272,8 +282,8 @@ const compose = (/**@type any*/ definition) => {
 		let temp = template.get(key);
 		if (temp != null) {
 			if (temp.type !== 'method') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'method\'.'); return; }
-			temp = { type: 'method', desc, source: [ ...temp.source, prototype ] };
-		} else temp = { type: 'method', desc, source: [ prototype ] };
+			temp = frozen({ type: 'method', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'method', desc, source: [ prototype ] });
 		template.set(key, temp);
 
 		properties[key] = desc;
@@ -285,7 +295,9 @@ const compose = (/**@type any*/ definition) => {
 		/**@type {object | null}*/
 		let protoProto = null;
 		/**@type {Map<key, TemplateDesc> | null}*/
-		let heaviest = null;
+		let heaviestProto = null;
+		/**@type {Record<key, any> | null}*/
+		let heaviestDefaults = null;
 
 		const extend = (/**@type Trait*/ struct) => {
 			if (isInstance(struct))
@@ -297,22 +309,48 @@ const compose = (/**@type any*/ definition) => {
 				extending.add(extended);
 
 			const temp = struct[Template];
-			let isHeaviest = false;
-			if (heaviest == null) {
+			const defs = struct[Defaults];
+			defaults[Size] += defs[Size];
+			let isHeaviestProto = false, isHeaviestDefaults = false;
+
+			if (heaviestProto == null) {
 				protoProto = struct[Prototype];
-				heaviest = temp; isHeaviest = true;
-			} else if (temp.size > heaviest.size) {
-				for (const [ key, desc ] of heaviest)
+				heaviestProto = temp; isHeaviestProto = true;
+			} else if (temp.size > heaviestProto.size) {
+				for (const [ key, desc ] of heaviestProto)
 					properties[key] = desc.desc;
 				protoProto = struct[Prototype];
-				heaviest = temp; isHeaviest = true;
+				heaviestProto = temp; isHeaviestProto = true;
+			}
+
+			if (heaviestDefaults == null) {
+				heaviestDefaults = defs; isHeaviestDefaults = true;
+			} else if (defs.size > heaviestDefaults.size) {
+				let ds = defs;
+				do {
+					const names = Object.getOwnPropertyNames(ds);
+					const symbols = Object.getOwnPropertySymbols(ds);
+
+					let useSymbols = false;
+					for (let i = names.length; i--;) {
+						/**@type {string|symbol}*/
+						const key = (useSymbols ? symbols[i] : names[i]);
+
+						if (key !== Size) defaults[key] = ds[key];
+
+						if (!useSymbols && i === 0)
+							(i = symbols.length, useSymbols = true);
+					}
+				} while (ds = Object.getPrototypeOf(ds));
+				heaviestDefaults = defs; isHeaviestDefaults = true;
 			}
 
 			for (const [ key, desc ] of temp) {
 				const has = template.get(key);
 				if (has == null) {
 					template.set(key, desc);
-					if (!isHeaviest) properties[key] = desc.desc;
+					if (!isHeaviestProto) properties[key] = desc.desc;
+					if (!isHeaviestDefaults && (key in defs)) defaults[key] = defs[key];
 				} else if (has !== desc) {
 					if (has.type !== desc.type) {
 						errors.push('- Collision in extend: \'' + String(key) + '\' is defined as both \'' + has.type + '\' and \'' + desc.type + '\'.'); return;
@@ -323,12 +361,18 @@ const compose = (/**@type any*/ definition) => {
 						while (i < aLen || i < bLen) {
 							if (i === aLen) {
 								template.set(key, desc);
-								if (isHeaviest)
+								if (isHeaviestProto)
 									delete properties[key];
 								else properties[key] = desc.desc;
+								if (key in defs) {
+									if (isHeaviestDefaults)
+										delete defaults[key];
+									else defaults[key] = defs[key];
+								}
 								break;
 							} else if (i === bLen) {
-								if (isHeaviest) properties[key] = has.desc;
+								if (isHeaviestProto) properties[key] = has.desc;
+								if (isHeaviestDefaults && (key in defs)) defaults[key] = defs[key];
 								break;
 							} else if (a[i] !== b[i]) {
 								badKeys.add(key);
@@ -347,6 +391,7 @@ const compose = (/**@type any*/ definition) => {
 		} else extend(definition.extends);
 
 		Object.setPrototypeOf(prototype, protoProto);
+		Object.setPrototypeOf(defaults, heaviestDefaults);
 	}
 
 	// ----- DO THE STUFF -----
@@ -374,14 +419,15 @@ const compose = (/**@type any*/ definition) => {
 	if (errors.length) throw new Error('One or more errors in struct template:\n' + errors.join('\n'));
 
 	Object.defineProperties(prototype, properties);
-	Object.freeze(prototype);
+	Object.freeze(prototype); Object.freeze(extending);
+	Object.freeze(template); Object.freeze(defaults);
 
-	return { prototype, extending, template };
+	return { prototype, extending, template, defaults, needsValues: (needsValues || defaults[Size] > 0) };
 };
 
 export const Struct = (() => {
 	const Struct = function (/**@type any*/ definition) {
-		const { prototype, extending, template } = compose(definition);
+		const { prototype, extending, template, defaults, needsValues } = compose(definition);
 
 		// ----- CREATE CONSTRUCTOR -----
 
@@ -394,54 +440,65 @@ export const Struct = (() => {
 				throw new Error('Values to constructor must be an object.');
 
 			const struct = Object.create(prototype);
+			Object.defineProperty(struct, Constructor, { value: constructor });
 
-			Object.defineProperties(struct, {
-				[Constructor]: { value: constructor },
-				[Values]: { value: {} }
-			});
+			/**@type any*/
+			const vals = needsValues && Object.create(defaults);
 
-			for (const [ key, desc ] of template) {
-				if (desc.type === 'assign') {
-					if (values[key] !== undefined)
-						struct[Values][key] = values[key];
-					else if (desc.default !== undefined)
-						struct[Values][key] = desc.default;
-					else throw new Error('In assignment to key \'' + String(key) + '\': No value was provided and no default value was defined.');
-				} else if (!Object.hasOwn(values, key)) {
-					continue;
-				} else if (desc.type === 'define') {
-					if (values[key] !== undefined) {
+			const names = Object.getOwnPropertyNames(values);
+			const symbols = Object.getOwnPropertySymbols(values);
+
+			let useSymbols = false;
+			for (let i = names.length; i--;) {
+				const key = (useSymbols ? symbols[i] : names[i]);
+
+				const desc = template.get(key);
+				if (desc != null) {
+					if (desc.type === 'assign') {
+						if (values[key] !== undefined)
+							vals[key] = values[key];
+						else if (defaults[key] !== undefined)
+							vals[key] = defaults[key];
+						else throw new Error('In assignment to key \'' + String(key) + '\': No value was provided and no default value was defined.');
+					} else if (desc.type === 'define') {
+						if (values[key] !== undefined) {
+							Object.defineProperty(struct, key, {
+								value: values[key],
+								enumerable: true,
+								writable: false
+							});
+						}
+					} else if (desc.type === 'computed') {
+						const fn = values[key];
+						if (typeof fn !== 'function')
+							throw new Error('Computed properties must be functions.');
+
 						Object.defineProperty(struct, key, {
-							value: values[key],
+							get: /**@this any*/ function () {
+								const got = fn.call(this, this[Values][key], this);
+								return (got === undefined ? null : got);
+							},
 							enumerable: true,
 							writable: false
 						});
+					} else {
+						const fn = values[key];
+						if (typeof fn !== 'function')
+							throw new Error('Methods must be functions.');
+
+						Object.defineProperty(struct, key, {
+							value: /**@this any*/ function () { return fn.bind(this); },
+							enumerable: false,
+							writable: false
+						});
 					}
-				} else if (desc.type === 'computed') {
-					const fn = values[key];
-					if (typeof fn !== 'function')
-						throw new Error('Computed properties must be functions.');
-
-					Object.defineProperty(struct, key, {
-						get: /**@this any*/ function () {
-							const got = fn.call(this, this[Values][key], this);
-							return (got === undefined ? null : got);
-						},
-						enumerable: true,
-						writable: false
-					});
-				} else {
-					const fn = values[key];
-					if (typeof fn !== 'function')
-						throw new Error('Methods must be functions.');
-
-					Object.defineProperty(struct, key, {
-						value: /**@this any*/ function () { return fn.bind(this); },
-						enumerable: false,
-						writable: false
-					});
 				}
+
+				if (!useSymbols && i === 0)
+					(i = symbols.length, useSymbols = true);
 			}
+
+			if (needsValues) Object.defineProperty(struct, Values, { value: Object.seal(vals) });
 
 			return Object.seal(struct);
 		};
@@ -461,6 +518,7 @@ export const Struct = (() => {
 			[Prototype]: { value: prototype },
 			[Extending]: { value: extending },
 			[Template]: { value: template },
+			[Defaults]: { value: defaults },
 
 			prototype: { value: prototype }
 		});
@@ -498,7 +556,7 @@ export default Struct;
 
 export const Trait = (() => {
 	const Trait = function (/**@type any*/ definition) {
-		const { prototype, extending, template } = compose(definition);
+		const { prototype, extending, template, defaults } = compose(definition);
 
 		const trait = Object.create(null);
 		extending.add(trait);
@@ -515,7 +573,8 @@ export const Trait = (() => {
 
 			[Prototype]: { value: prototype },
 			[Extending]: { value: extending },
-			[Template]: { value: template }
+			[Template]: { value: template },
+			[Defaults]: { value: defaults }
 		});
 
 		Object.setPrototypeOf(trait, prototype);
