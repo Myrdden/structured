@@ -9,10 +9,9 @@ const Size = Symbol();
 /**@typedef {(...args: any) => any} func*/
 /**@typedef {(string | symbol)} key*/
 /**@typedef {{
-	type: ('assign' | 'constant' | 'define' | 'computed' | 'method');
+	type: ('assign' | 'constant' | 'define' | 'computed' | 'memo' | 'method');
 	desc: PropertyDescriptor;
 	source: Trait[];
-	default?: any;
 }} TemplateDesc*/
 //@ts-ignore
 /**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; [Defaults]: Record<key, any>; }} Trait*/
@@ -182,6 +181,35 @@ const compose = (/**@type any*/ definition) => {
 		template.set(key, temp);
 
 		properties[key] = desc;
+	};
+
+	const makeMemo = (/**@type key*/ key, /**@type func*/ fn) => {
+		if (keys.has(key)) { errors.push('- Cannot define property for \'' + String(key) + '\' as it already exists within the Struct.'); return; }
+		keys.add(key);
+		badKeys.delete(key);
+
+		if (typeof fn !== 'function') { errors.push('- Memoised property must be a getter function.'); return; }
+
+		const desc = {
+			get: /**@this any*/ function () {
+				if (key in this[Values])
+					return this[Values][key];
+
+				const result = fn.call(this, this);
+				return (this[Values][key] = (result === undefined ? null : result));
+			},
+			enumerable: true
+		};
+
+		let temp = template.get(key);
+		if (temp != null) {
+			if (temp.type !== 'memo') { errors.push('- Type mismatch in \'' + String(key) + '\', extended key is \'' + temp.type + '\' but defined key is \'memo\'.'); return; }
+			temp = frozen({ type: 'memo', desc, source: [ ...temp.source, prototype ] });
+		} else temp = frozen({ type: 'memo', desc, source: [ prototype ] });
+		template.set(key, temp);
+
+		properties[key] = desc;
+		needsValues = true;
 	};
 
 	// ----- MUTABLE STUFF -----
@@ -404,6 +432,9 @@ const compose = (/**@type any*/ definition) => {
 
 	if (definition.define != null)
 		ofKeys(makeDefinition, definition.define);
+
+	if (definition.memo != null)
+		ofKeys(makeMemo, definition.memo);
 
 	if (definition.computed != null)
 		ofKeys(makeComputation, definition.computed);
