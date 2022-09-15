@@ -24,7 +24,7 @@ type Extended <E extends StructExtends> = E extends any[]
 type PickMutDef <key extends (keyof T1 | keyof T2 | keyof T3), T1, T2, T3 = {}> = (key extends (keyof T1) ? T1[key] : (key extends (keyof T2) ? T2[key] : (key extends (keyof T3) ? T3[key] : never)));
 
 type Compose <
-	Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo extends object,
+	Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo,
 	Constant extends object, Computed extends object, Method extends object, Extends extends StructExtends
 > = (
 	{ -readonly [ key in (keyof Assign | keyof Getter | keyof Setter) ]: PickMutDef<key, Assign, Getter, Setter>; }
@@ -32,8 +32,13 @@ type Compose <
 	& Extended<Extends>
 );
 
+type CustomConstructor <T extends object, Keys extends (keyof T) = keyof T, Static extends object = {}> = (
+	structConstructor: Struct<T, Keys, Static>,
+	values: Partial<Pick<T, Keys>>
+) => T;
+
 type StructTemplate <
-	Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo extends object,
+	Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo,
 	Constant extends object, Computed extends object, Method extends object, Extends extends StructExtends, Static extends object = {},
 	PostExtended extends object = Extended<Extends>
 > = {
@@ -74,22 +79,28 @@ type StructTemplate <
 	} & ThisType<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>>;
 
 	static?: Partial<Static>;
+
+	override?: CustomConstructor<
+		Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>,
+		(keyof Assign | keyof Getter | keyof Setter | keyof Define),
+		Static
+	>;
 };
 
-export type Struct <T extends object, ConstantKeys extends PropertyKey = '', Static extends object = {}> = ({
-	(values?: Partial<Omit<T, ConstantKeys>>): T;
-	new (values?: Partial<Omit<T, ConstantKeys>>): T;
+export type Struct <T extends object, Keys extends (keyof T) = keyof T, Static extends object = {}> = ({
+	(values?: Partial<Pick<T, Keys>>): T;
+	new (values?: Partial<Pick<T, Keys>>): T;
 	prototype: T;
 } & Readonly<Static>);
 
 export const Struct: {
 	<Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo extends object,
 		Constant extends object, Computed extends object, Method extends object, Extends extends StructExtends, Static extends object = {}
-	> (template: StructTemplate<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends, Static>): Struct<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends>, keyof Constant, Static>;
+	> (template: StructTemplate<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends, Static>): Struct<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends>, (keyof Assign | keyof Getter | keyof Setter | keyof Define), Static>;
 
 	new <Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo extends object,
 		Constant extends object, Computed extends object, Method extends object, Extends extends StructExtends, Static extends object = {}
-	> (template: StructTemplate<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends, Static>): Struct<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends>, keyof Constant, Static>;
+	> (template: StructTemplate<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends, Static>): Struct<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends>, (keyof Assign | keyof Getter | keyof Setter | keyof Define), Static>;
 };
 
 export const Trait: {

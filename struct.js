@@ -464,14 +464,14 @@ export const Struct = (() => {
 
 		/**@type StructConstructor*/
 		//@ts-ignore
-		const constructor = function (/**@type any*/ values) {
+		const structConstructor = function (/**@type any*/ values) {
 			if (values == null)
 				values = {};
 			else if (typeof values !== 'object')
 				throw new Error('Values to constructor must be an object.');
 
 			const struct = Object.create(prototype);
-			Object.defineProperty(struct, Constructor, { value: constructor });
+			Object.defineProperty(struct, Constructor, { value: structConstructor });
 
 			/**@type any*/
 			const vals = needsValues && Object.create(defaults);
@@ -534,16 +534,16 @@ export const Struct = (() => {
 			return Object.seal(struct);
 		};
 
-		extending.add(constructor);
+		extending.add(structConstructor);
 
-		Object.defineProperties(constructor, {
+		Object.defineProperties(structConstructor, {
 			[Symbol.hasInstance]: { value: (/**@type any*/ instance) => {
 				if (isInstance(instance))
 					instance = instance[Constructor];
 				else if (!Object.hasOwn(instance, Prototype))
 					return false;
 
-				return instance[Extending].has(constructor);
+				return instance[Extending].has(structConstructor);
 			}},
 
 			[Prototype]: { value: prototype },
@@ -566,7 +566,7 @@ export const Struct = (() => {
 			for (let i = names.length; i--;) {
 				const key = (useSymbols ? symbols[i] : names[i]);
 
-				Object.defineProperty(constructor, key, {
+				Object.defineProperty(structConstructor, key, {
 					value: (statics[key] === undefined ? null : statics[key]),
 					enumerable: true,
 					writable: false
@@ -577,7 +577,25 @@ export const Struct = (() => {
 			}
 		}
 
-		return Object.freeze(constructor);
+		Object.freeze(structConstructor);
+
+		if (definition.override !== undefined) {
+			if (typeof definition.override !== 'function')
+				throw new Error('Custom constructor must be a function.');
+
+			const fn = definition.override;
+			const constructor = function (/**@type any*/ values) {
+				if (values == null)
+					values = {};
+				else if (typeof values !== 'object')
+					throw new Error('Values to constructor must be an object.');
+
+				return fn(structConstructor, values);
+			};
+
+			Object.setPrototypeOf(constructor, structConstructor);
+			return Object.freeze(constructor);
+		} else return structConstructor;
 	};
 
 	return Object.freeze(Struct);
