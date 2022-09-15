@@ -5,6 +5,8 @@ const Values = Symbol();
 const Template = Symbol();
 const Defaults = Symbol();
 const Size = Symbol();
+const ToAssign = Symbol();
+const ToDefine = Symbol();
 
 /**@typedef {(...args: any) => any} func*/
 /**@typedef {(string | symbol)} key*/
@@ -14,7 +16,7 @@ const Size = Symbol();
 	source: Trait[];
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; [Defaults]: Record<key, any>; }} Trait*/
+/**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlyArray<key>; [ToDefine]: ReadonlyArray<key> }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
@@ -60,15 +62,13 @@ export const isStruct = (/**@type unknown*/ thing) => (
 	&& (Object.hasOwn(thing, Prototype) || Object.hasOwn(thing, Constructor))
 );
 
-export const _extends = (/**@type Either*/ struct, /**@type Either[]*/ ...traits) => {
-	if (isInstance(struct)) {
-		struct = struct[Constructor];
-	} else if (!Object.hasOwn(struct, Prototype))
-		throw new Error('First argument is not a Struct or Trait.');
-
+export const _extends = (/**@type Either*/ struct, /**@type Trait[]*/ ...traits) => {
 	for (let i = traits.length; i--;) {
+		if (!isTrait(traits[i]))
+			return false;
+
 		//@ts-ignore
-		if (!struct[Extending].has(traits[i]))
+		if (!(struct instanceof traits[i]))
 			return false;
 	}
 
@@ -89,7 +89,8 @@ export const stringify = (/**@type Instance*/ thing, /**@type any*/ replacer, /*
 	return JSON.stringify(toObject(thing), replacer, space);
 };
 
-export const inspect = (/**@type any*/ thing) => JSON.parse(stringify(thing));
+export const inspect = (/**@type any*/ thing) => console.log(toObject(thing));
+
 /**@template T @returns T*/
 const frozen = (/**@type T*/ obj) => (Object.setPrototypeOf(obj, null), Object.freeze(obj));
 
@@ -103,6 +104,10 @@ const compose = (/**@type any*/ definition) => {
 	/**@type Record<key, any>*/
 	const defaults = Object.create(null);
 	defaults[Size] = 0;
+	/**@type Set<key>*/
+	const toDefine = new Set();
+	/**@type Set<key>*/
+	const toAssign = new Set();
 	let needsValues = false;
 	/**@type Set<Either>*/
 	const extending = new Set();
@@ -140,7 +145,7 @@ const compose = (/**@type any*/ definition) => {
 		badKeys.delete(key);
 
 		const desc = {
-			value: (val === undefined ? null : val),
+			value: val,
 			enumerable: true,
 			writable: false
 		};
@@ -152,6 +157,8 @@ const compose = (/**@type any*/ definition) => {
 		} else temp = frozen({ type: 'define', desc, source: [ prototype ] });
 		template.set(key, temp);
 
+		toDefine.add(key);
+
 		properties[key] = desc;
 	};
 
@@ -160,18 +167,12 @@ const compose = (/**@type any*/ definition) => {
 		keys.add(key);
 		badKeys.delete(key);
 
-		let desc;
-		if (fn == null) {
-			desc = {
-				get: () => { throw new Error('Struct does not provide an implementation for computed property \'' + String(key) + '\''); },
-				enumerable: true
-			};
-		} else if (typeof fn === 'function') {
-			desc = {
-				get: fn,
-				enumerable: true
-			};
-		} else { errors.push('- Computed properties must be functions.'); return; }
+		if (typeof fn !== 'function') { errors.push('- Computed property \'' + String(key) + '\' must be a getter function.'); return; }
+
+		const desc = {
+			get: /**@this any*/ function () { return (this === prototype ? undefined : fn.call(this, this)); },
+			enumerable: true
+		};
 
 		let temp = template.get(key);
 		if (temp != null) {
@@ -188,10 +189,11 @@ const compose = (/**@type any*/ definition) => {
 		keys.add(key);
 		badKeys.delete(key);
 
-		if (typeof fn !== 'function') { errors.push('- Memoised property must be a getter function.'); return; }
+		if (typeof fn !== 'function') { errors.push('- Memoised property \'' + String(key) + '\' must be a getter function.'); return; }
 
 		const desc = {
 			get: /**@this any*/ function () {
+				if (this === prototype) return undefined;
 				if (key in this[Values])
 					return this[Values][key];
 
@@ -231,22 +233,27 @@ const compose = (/**@type any*/ definition) => {
 			const getter = props.get;
 			/**@this any*/
 			get = function () {
+				if (this === prototype) return undefined;
 				const got = getter.call(this, this[Values][key], this);
 				return (got === undefined ? null : got);
 			};
-		} else get = /**@this any*/ function () { return this[Values][key]; };
+		} else get = /**@this any*/ function () { return (this === prototype ? undefined : this[Values][key]); };
 
 		if (props.set != null) {
 			if (typeof props.set !== 'function') { errors.push('- Setter for \'' + String(key) + '\' must be a function.'); return; }
 			const setter = props.set;
 			/**@this any*/
 			set = function (/**@type any*/ next) {
+				if (this === prototype) throw new Error('Cannot assign values to prototypes.');
 				const result = setter.call(this, next, this);
 				if (result === undefined)
 					this[Values][key] = (next === undefined ? null : next);
 				else this[Values][key] = result;
 			};
-		} else set = /**@this any*/ function (/**@type any*/ next) { this[Values][key] = (next === undefined ? null : next); };
+		} else set = /**@this any*/ function (/**@type any*/ next) {
+			if (this === prototype) throw new Error('Cannot assign values to prototypes.');
+			this[Values][key] = (next === undefined ? null : next);
+		};
 
 		const desc = { get, set, enumerable: true };
 
@@ -258,6 +265,8 @@ const compose = (/**@type any*/ definition) => {
 		template.set(key, temp);
 
 		if (props.default !== undefined) defaults[key] = props.default, defaults[Size]++;
+
+		toAssign.add(key);
 
 		properties[key] = desc;
 		needsValues = true;
@@ -281,31 +290,17 @@ const compose = (/**@type any*/ definition) => {
 
 	// ----- METHODS -----
 
-	const makeMethod = (/**@type key*/ key, /**@type func*/ val, /**@type boolean*/ getter) => {
+	const makeMethod = (/**@type key*/ key, /**@type func*/ val) => {
 		if (keys.has(key)) { errors.push('- Cannot define property for \'' + String(key) + '\' as it already exists within the Struct.'); return; }
 		keys.add(key);
 		badKeys.delete(key);
 
-		let desc;
+		if (typeof val !== 'function') { errors.push('- Method \'' + String(key) + '\' must be a function.'); return; }
 
-		if (val == null) {
-			desc = {
-				value: () => { throw new Error('Struct does not provide an implementation for \'' + String(key) + '\''); },
-				enumerable: false,
-				writable: false
-			};
-		} else if (typeof val === 'function') {
-			if (getter === true) {
-				desc = {
-					value: val,
-					enumerable: false,
-					writable: false
-				};
-			} else desc = {
-				get: function () { return val.bind(this); },
-				enumerable: false
-			};
-		} else { errors.push('- Methods must be functions.'); return; }
+		const desc = {
+			get: function () { return (this === prototype) ? val : val.bind(this); },
+			enumerable: false
+		};
 
 		let temp = template.get(key);
 		if (temp != null) {
@@ -339,6 +334,9 @@ const compose = (/**@type any*/ definition) => {
 			const temp = struct[Template];
 			const defs = struct[Defaults];
 			defaults[Size] += defs[Size];
+			for (const key of struct[ToAssign]) toAssign.add(key);
+			for (const key of struct[ToDefine]) toDefine.add(key);
+
 			let isHeaviestProto = false, isHeaviestDefaults = false;
 
 			if (heaviestProto == null) {
@@ -453,12 +451,17 @@ const compose = (/**@type any*/ definition) => {
 	Object.freeze(prototype); Object.freeze(extending);
 	Object.freeze(template); Object.freeze(defaults);
 
-	return { prototype, extending, template, defaults, needsValues: (needsValues || defaults[Size] > 0) };
+	return {
+		prototype, extending, template, defaults,
+		toAssign: Object.freeze(Array.from(toAssign)),
+		toDefine: Object.freeze(Array.from(toDefine)),
+		needsValues: (needsValues || defaults[Size] > 0)
+	};
 };
 
 export const Struct = (() => {
 	const Struct = function (/**@type any*/ definition) {
-		const { prototype, extending, template, defaults, needsValues } = compose(definition);
+		const { prototype, extending, template, defaults, toAssign, toDefine, needsValues } = compose(definition);
 
 		// ----- CREATE CONSTRUCTOR -----
 
@@ -476,60 +479,31 @@ export const Struct = (() => {
 			/**@type any*/
 			const vals = needsValues && Object.create(defaults);
 
-			const names = Object.getOwnPropertyNames(values);
-			const symbols = Object.getOwnPropertySymbols(values);
+			for (let i = toAssign.length; i--;) {
+				const key = toAssign[i];
+				//@ts-ignore
+				if (values[key] !== Object.prototype[key]) {
+					if (values[key] !== undefined)
+						vals[key] = values[key];
+					else if (!(key in defaults)) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
+				}
+			}
 
-			let useSymbols = false;
-			for (let i = names.length; i--;) {
-				const key = (useSymbols ? symbols[i] : names[i]);
-
-				const desc = template.get(key);
-				if (desc != null) {
-					if (desc.type === 'assign') {
-						if (values[key] !== undefined)
-							vals[key] = values[key];
-						else if (defaults[key] !== undefined)
-							vals[key] = defaults[key];
-						else throw new Error('In assignment to key \'' + String(key) + '\': No value was provided and no default value was defined.');
-					} else if (desc.type === 'define') {
-						if (values[key] !== undefined) {
-							Object.defineProperty(struct, key, {
-								value: values[key],
-								enumerable: true,
-								writable: false
-							});
-						}
-					} else if (desc.type === 'computed') {
-						const fn = values[key];
-						if (typeof fn !== 'function')
-							throw new Error('Computed properties must be functions.');
-
+			for (let i = toDefine.length; i--;) {
+				const key = toDefine[i];
+				//@ts-ignore
+				if (values[key] !== Object.prototype[key]) {
+					if (values[key] !== undefined) {
 						Object.defineProperty(struct, key, {
-							get: /**@this any*/ function () {
-								const got = fn.call(this, this[Values][key], this);
-								return (got === undefined ? null : got);
-							},
+							value: values[key],
 							enumerable: true,
 							writable: false
 						});
-					} else {
-						const fn = values[key];
-						if (typeof fn !== 'function')
-							throw new Error('Methods must be functions.');
-
-						Object.defineProperty(struct, key, {
-							value: /**@this any*/ function () { return fn.bind(this); },
-							enumerable: false,
-							writable: false
-						});
-					}
+					} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
 				}
-
-				if (!useSymbols && i === 0)
-					(i = symbols.length, useSymbols = true);
 			}
 
-			if (needsValues) Object.defineProperty(struct, Values, { value: Object.seal(vals) });
+			if (needsValues) Object.defineProperty(struct, Values, { value: vals });
 
 			return Object.seal(struct);
 		};
@@ -550,6 +524,8 @@ export const Struct = (() => {
 			[Extending]: { value: extending },
 			[Template]: { value: template },
 			[Defaults]: { value: defaults },
+			[ToAssign]: { value: toAssign },
+			[ToDefine]: { value: toDefine },
 
 			prototype: { value: prototype }
 		});
@@ -605,7 +581,7 @@ export default Struct;
 
 export const Trait = (() => {
 	const Trait = function (/**@type any*/ definition) {
-		const { prototype, extending, template, defaults } = compose(definition);
+		const { prototype, extending, template, defaults, toAssign, toDefine } = compose(definition);
 
 		const trait = Object.create(null);
 		extending.add(trait);
@@ -623,7 +599,9 @@ export const Trait = (() => {
 			[Prototype]: { value: prototype },
 			[Extending]: { value: extending },
 			[Template]: { value: template },
-			[Defaults]: { value: defaults }
+			[Defaults]: { value: defaults },
+			[ToAssign]: { value: toAssign },
+			[ToDefine]: { value: toDefine }
 		});
 
 		Object.setPrototypeOf(trait, prototype);

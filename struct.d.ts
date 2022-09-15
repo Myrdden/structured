@@ -57,15 +57,15 @@ type StructTemplate <
 	} & ThisType<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>>;
 
 	define?: {
-		[ key in keyof Define ]: Define[key];
+		[ key in keyof Define ]: (Define[key] | undefined);
 	} & ThisType<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>>;
 
 	memo?: {
-		[ key in keyof Memo ]: Memo[key];
+		[ key in keyof Memo ]: (struct: Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>) => Memo[key];
 	} & ThisType<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>>;
 
 	constant?: {
-		[ key in keyof Constant ]: Constant[key];
+		[ key in keyof Constant ]: Nullify<Constant[key]>;
 	} & ThisType<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, PostExtended>>;
 
 	computed?: {
