@@ -16,7 +16,7 @@ const ToDefine = Symbol();
 	source: Trait[];
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: Set<Either>; [Template]: Map<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlyArray<key>; [ToDefine]: ReadonlyArray<key> }} Trait*/
+/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<Either>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key> }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
@@ -317,7 +317,7 @@ const compose = (/**@type any*/ definition) => {
 	if (definition.extends != null) {
 		/**@type {object | null}*/
 		let protoProto = null;
-		/**@type {Map<key, TemplateDesc> | null}*/
+		/**@type {ReadonlyMap<key, TemplateDesc> | null}*/
 		let heaviestProto = null;
 		/**@type {Record<key, any> | null}*/
 		let heaviestDefaults = null;
@@ -453,8 +453,8 @@ const compose = (/**@type any*/ definition) => {
 
 	return {
 		prototype, extending, template, defaults,
-		toAssign: Object.freeze(Array.from(toAssign)),
-		toDefine: Object.freeze(Array.from(toDefine)),
+		toAssign: Object.freeze(toAssign),
+		toDefine: Object.freeze(toDefine),
 		needsValues: (needsValues || defaults[Size] > 0)
 	};
 };
@@ -479,28 +479,24 @@ export const Struct = (() => {
 			/**@type any*/
 			const vals = needsValues && Object.create(defaults);
 
-			for (let i = toAssign.length; i--;) {
-				const key = toAssign[i];
-				//@ts-ignore
-				if (values[key] !== Object.prototype[key]) {
-					if (values[key] !== undefined)
-						vals[key] = values[key];
-					else if (!(key in defaults)) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
-				}
+			for (const key of toAssign) {
+				if (values[key] !== undefined) {
+					//@ts-ignore
+					if (values[key] !== defaults[key] && values[key] !== Object.prototype[key]) vals[key] = values[key];
+				} else if (!(key in defaults)) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
 			}
 
-			for (let i = toDefine.length; i--;) {
-				const key = toDefine[i];
-				//@ts-ignore
-				if (values[key] !== Object.prototype[key]) {
-					if (values[key] !== undefined) {
-						Object.defineProperty(struct, key, {
-							value: values[key],
-							enumerable: true,
-							writable: false
-						});
-					} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
-				}
+			for (const key of toDefine) {
+				if (values[key] !== undefined) {
+					//@ts-ignore
+					if (values[key] !== prototype[key] && values[key] !== Object.prototype[key]) {
+							Object.defineProperty(struct, key, {
+								value: values[key],
+								enumerable: true,
+								writable: false
+							});
+					}
+				} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
 			}
 
 			if (needsValues) Object.defineProperty(struct, Values, { value: vals });
