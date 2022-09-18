@@ -508,16 +508,36 @@ export const Struct = (() => {
 			return Object.seal(struct);
 		};
 
-		extending.add(structConstructor);
+		/**@type any*/
+		let constructor;
+		if (definition.override !== undefined) {
+			if (typeof definition.override !== 'function')
+				throw new Error('Custom constructor must be a function.');
 
-		Object.defineProperties(structConstructor, {
+			const fn = definition.override;
+			constructor = function (/**@type any*/ values) {
+				if (values == null)
+					values = {};
+				else if (typeof values !== 'object')
+					throw new Error('Values to constructor must be an object.');
+
+				const result = fn(values);
+				return structConstructor(result ?? values);
+			};
+
+			Object.defineProperty(constructor, 'override', { value: fn });
+		} else constructor = structConstructor, Object.defineProperty(constructor, 'override', { value: null });
+
+		extending.add(constructor);
+
+		Object.defineProperties(constructor, {
 			[Symbol.hasInstance]: { value: (/**@type any*/ instance) => {
 				if (isInstance(instance))
 					instance = instance[Constructor];
 				else if (!Object.hasOwn(instance, Prototype))
 					return false;
 
-				return instance[Extending].has(structConstructor);
+				return instance[Extending].has(constructor);
 			}},
 
 			[Prototype]: { value: prototype },
@@ -541,8 +561,10 @@ export const Struct = (() => {
 			let useSymbols = false;
 			for (let i = names.length; i--;) {
 				const key = (useSymbols ? symbols[i] : names[i]);
+				if (key === 'prototype' || key === 'override')
+					throw new Error('Static key \'' + key + '\' is reserved.');
 
-				Object.defineProperty(structConstructor, key, {
+				Object.defineProperty(constructor, key, {
 					value: (statics[key] === undefined ? null : statics[key]),
 					enumerable: true,
 					writable: false
@@ -554,25 +576,12 @@ export const Struct = (() => {
 		}
 
 		Object.freeze(structConstructor);
-
-		if (definition.override !== undefined) {
-			if (typeof definition.override !== 'function')
-				throw new Error('Custom constructor must be a function.');
-
-			const fn = definition.override;
-			const constructor = function (/**@type any*/ values) {
-				if (values == null)
-					values = {};
-				else if (typeof values !== 'object')
-					throw new Error('Values to constructor must be an object.');
-
-				return fn(structConstructor, values);
-			};
-
-			Object.setPrototypeOf(constructor, structConstructor);
-			return Object.freeze(constructor);
-		} else return structConstructor;
+		return Object.freeze(constructor);
 	};
+
+
+
+
 
 	return Object.freeze(Struct);
 })();
