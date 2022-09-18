@@ -575,9 +575,125 @@ export const Struct = (() => {
 		return Object.freeze(constructor);
 	};
 
+	Object.defineProperties(Struct, {
+		is: { value: isStruct },
 
+		getConstructor: { value: (/**@type unknown*/ struct) => {
+			if (!isInstance(struct))
+				throw new Error('Argument to Struct.getConstructor is not a Struct instance.');
 
+			return struct[Constructor];
+		}},
 
+		extends: { value: _extends },
+		toObject: { value: toObject },
+		stringify: { value: stringify },
+		inspect: { value: inspect },
+
+		update: { value: (/**@type unknown*/ struct, /**@type any[]*/ ...values) => {
+			if (!isInstance(struct))
+				throw new Error('First argument to Struct.update must be a Struct.');
+			const root = struct[Constructor];
+
+			for (let i = values.length; i--;)
+				if (values[i] == null || (typeof values[i] !== 'object')) throw new Error('Values must be objects.');
+
+			const defaults = root[Defaults], prototype = root[Prototype];
+			const newStruct = Object.create(prototype);
+			Object.defineProperty(newStruct, Constructor, { value: root });
+			const newVals = ((struct[Values] != null) ? Object.create(defaults) : null);
+
+			const toDefine = root[ToDefine];
+			for (const key of toDefine) {
+				let val;
+				for (let j = values.length; j--;)
+					//@ts-ignore
+					if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key]) { val = values[j][key]; break; }
+
+				if (val === undefined) val = Object.hasOwn(struct, key) ? struct[key] : undefined;
+
+				//@ts-ignore
+				if (val !== undefined && val !== prototype[key]) {
+					Object.defineProperty(newStruct, key, {
+						value: val,
+						enumerable: true,
+						writable: false
+					});
+				}
+			}
+
+			const toAssign = root[ToAssign];
+			for (const key of toAssign) {
+				let val;
+				for (let j = values.length; j--;)
+					//@ts-ignore
+					if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key]) { val = values[j][key]; break; }
+
+				if (val === undefined) val = struct[Values][key];
+				if (val !== undefined && val !== defaults[key]) newVals[key] = val;
+			}
+
+			if (newVals != null) Object.defineProperty(newStruct, Values, { value: newVals });
+
+			return Object.seal(newStruct);
+		}},
+
+		patch: { value: (/**@type unknown*/ struct, /**@type any*/ values, /**@type any*/ keyedValue) => {
+			if (!isInstance(struct))
+				throw new Error('First argument to Struct.update must be a Struct.');
+			const root = struct[Constructor];
+
+			const toAssign = root[ToAssign];
+			const toDefine = root[ToDefine];
+			if (typeof values === 'string' || typeof values === 'symbol') {
+				if (!toDefine.has(values) && !toAssign.has(values)) return struct;
+				if (keyedValue === undefined) throw new Error('No value provided.');
+			} else if (!isPlainObj(values)) throw new Error('nyet');
+
+			const newStruct = Object.create(struct);
+			const newVals = ((struct[Values] != null) ? Object.create(root[Defaults]) : null);
+
+			if (newVals != null) {
+				for (const key of toAssign)
+					if (struct[Values][key] !== undefined) newVals[key] = struct[Values][key];
+			}
+
+			if (typeof values === 'string' || typeof values === 'symbol') {
+				if (toDefine.has(values)) {
+					Object.defineProperty(newStruct, values, {
+						value: keyedValue,
+						enumerable: true,
+						writable: false
+					});
+				} else newVals[values] = keyedValue;
+			} else {
+				const names = Object.getOwnPropertyNames(values);
+				const symbols = Object.getOwnPropertySymbols(values);
+
+				let useSymbols = false;
+				for (let i = names.length; i--;) {
+					const key = (useSymbols ? symbols[i] : names[i]);
+					if (!useSymbols && i === 0)
+						(i = symbols.length, useSymbols = true);
+
+					//@ts-ignore
+					if (values[key] === undefined || values[key] === Object.prototype[key]) continue;
+
+					if (toDefine.has(key)) {
+						Object.defineProperty(newStruct, key, {
+							value: values[key],
+							enumerable: true,
+							writable: false
+						});
+					} else if (toAssign.has(key)) newVals[key] = values[key];
+				}
+			}
+
+			if (newVals != null) Object.defineProperty(newStruct, Values, { value: newVals });
+
+			return Object.seal(newStruct);
+		}},
+	});
 
 	return Object.freeze(Struct);
 })();

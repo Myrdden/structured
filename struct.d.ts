@@ -100,6 +100,19 @@ export const Struct: {
 		Constant extends object, Computed extends object, Method extends object, Extends extends StructExtends,
 		Overrides extends object, Static extends object = {}
 	> (template: StructTemplate<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends, Overrides, Static>): Struct<Compose<Assign, Getter, Setter, Define, Memo, Constant, Computed, Method, Extends>, (keyof Assign | keyof Getter | keyof Setter | keyof Define), Overrides, Static>;
+
+	readonly is: (thing: any) => thing is object;
+	readonly extends: <T extends (object | func<object>)> (struct: object, ...traits: T[]) => struct is DeFuncify<T>;
+
+	readonly stringify: typeof JSON.stringify;
+	readonly toObject: (struct: object) => object;
+
+	readonly update: <T extends object> (struct: T, ...values: object[]) => T;
+
+	readonly patch: {
+		<T extends object> (struct: T, values: Partial<T>): T;
+		<T extends object, K extends (keyof T)> (struct: T, key: K, value: T[K]): T;
+	};
 };
 
 export const Trait: {
