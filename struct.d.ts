@@ -113,6 +113,8 @@ export const Struct: {
 		<T extends object> (struct: T, values: Partial<T>): T;
 		<T extends object, K extends (keyof T)> (struct: T, key: K, value: T[K]): T;
 	};
+
+	readonly forEach: <T extends (object | any[] | string)> (object: T, fn: ((element: any, index: (string | number | symbol | undefined), object: T) => void), thisArg?: any) => void;
 };
 
 export const Trait: {

@@ -47,7 +47,8 @@ const ofKeys = (/**@type func*/ fn, /**@type any*/ thing) => {
 /**@returns {thing is Instance}*/
 const isInstance = (/**@type unknown*/ thing) => (
 	thing != null && (typeof thing === 'object')
-	&& Object.hasOwn(thing, Constructor)
+	//@ts-ignore
+	&& (thing[Constructor] != null)
 );
 
 /**@returns {thing is Trait}*/
@@ -640,7 +641,7 @@ export const Struct = (() => {
 
 		patch: { value: (/**@type unknown*/ struct, /**@type any*/ values, /**@type any*/ keyedValue) => {
 			if (!isInstance(struct))
-				throw new Error('First argument to Struct.update must be a Struct.');
+				throw new Error('First argument to Struct.patch must be a Struct.');
 			const root = struct[Constructor];
 
 			const toAssign = root[ToAssign];
@@ -692,6 +693,42 @@ export const Struct = (() => {
 			if (newVals != null) Object.defineProperty(newStruct, Values, { value: newVals });
 
 			return Object.seal(newStruct);
+		}},
+
+		forEach: { value: (/**@type unknown*/ object, /**@type unknown*/ fn, /**@type unknown*/ thisArg) => {
+			if (typeof fn !== 'function')
+				throw new Error('Not a function.');
+
+			if (thisArg === undefined)
+				thisArg = object;
+
+			if (typeof object === 'string' || Array.isArray(object)) {
+				if (object.length === 0) return;
+				for (let i = 0, len = object.length; i !== len; i++)
+					fn.call(thisArg, object[i], i, object);
+				return;
+			}
+
+			if (object == null || (typeof object !== 'object'))
+				throw new Error('Objects passed to Struct.forEach must be either Strings, Arrays, or Objects.');
+
+			//@ts-ignore
+			if (('forEach' in object) && (typeof object.forEach === 'function')) {
+				//@ts-ignore
+				object.forEach(fn, thisArg);
+				return;
+			}
+
+			if (Symbol.iterator in object) {
+				//@ts-ignore
+				for (const element of object)
+					fn.call(thisArg, element, undefined, object);
+				return;
+			}
+
+			for (const key in object)
+				//@ts-ignore
+				fn.call(thisArg, object[key], key, object);
 		}},
 	});
 
