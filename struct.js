@@ -729,6 +729,8 @@ export const Struct = (() => {
 				//@ts-ignore
 				fn.call(thisArg, object[key], key, object);
 		}},
+
+		forEachable: { value: (/**@type unknown*/ object) => ((typeof object === 'string') || (object != null && typeof object === 'object')) },
 	});
 
 	return Object.freeze(Struct);

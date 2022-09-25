@@ -113,8 +113,26 @@ export const Struct: {
 		<T extends object, K extends (keyof T)> (struct: T, key: K, value: T[K]): T;
 	};
 
-	readonly forEach: <T extends (object | any[] | string)> (object: T, fn: ((element: any, index: (string | number | symbol | undefined), object: T) => void), thisArg?: any) => void;
+	readonly forEach: <T extends ForEachable> (object: T, fn: ((element: ForEachVal<T>, index: ForEachKey<T>, object: T) => void), thisArg?: any) => void;
+	readonly forEachable: (object: unknown) => object is ForEachable;
 };
+
+type ForEachable = (string | any[] | Map<any, any> | Set<any> | Iterable<any> | Record<PropertyKey, any>);
+
+type ForEachVal <T> = T extends string ? string
+	: T extends Array<infer V> ? V
+	: T extends Map<any, infer V> ? V
+	: T extends Set<infer V> ? V
+	: T extends Iterable<infer V> ? V
+	: T extends Record<any, infer V> ? V
+	: never;
+
+type ForEachKey <T> = T extends (string | any[]) ? number
+	: T extends Map<infer K, any> ? K
+	: T extends Set<infer S> ? S
+	: T extends Iterable<any> ? undefined
+	: T extends Record<infer K, any> ? K
+	: never;
 
 export const Trait: {
 	<Assign extends object, Getter extends object, Setter extends object, Define extends object, Memo extends object,
