@@ -16,11 +16,11 @@ const ToDefine = Symbol();
 	source: Trait[];
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<Either>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key>; [Constructor]: (StructConstructor | null); }} Trait*/
+/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<(Trait | StructConstructor)>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key>; [Constructor]: (StructConstructor | null); }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
-/**@typedef {{ [Values]: Record<PropertyKey, any>; [ key: PropertyKey ]: any; }} Instance*/
+/**@typedef {{ [Constructor]: StructConstructor; [Values]: Record<PropertyKey, any>; [ key: PropertyKey ]: any; }} Instance*/
 /**@typedef {Trait | Instance} Either*/
 
 
@@ -65,13 +65,25 @@ export const isStruct = (/**@type unknown*/ thing) => (
 	&& (thing[Constructor] != null || Object.hasOwn(thing, Prototype))
 );
 
-export const _extends = (/**@type Either*/ struct, /**@type Trait[]*/ ...traits) => {
+/** @template {Either} T @returns{struct is T}*/
+export const _extends = (/**@type Either*/ struct, /**@type T[]*/ ...traits) => {
+	let extending;
+	if (isTrait(struct))
+		extending = struct[Extending];
+	else if (isInstance(struct))
+		extending = struct[Constructor][Extending];
+	else throw new Error('Not a struct.');
+
 	for (let i = traits.length; i--;) {
-		if (!isTrait(traits[i]))
+		/**@type Trait*/
+		//@ts-ignore
+		let trait = traits[i];
+		if (isInstance(trait))
+			trait = trait[Constructor];
+		if (!isStruct(trait))
 			return false;
 
-		//@ts-ignore
-		if (!(struct instanceof traits[i]))
+		if (!extending.has(trait))
 			return false;
 	}
 
@@ -97,7 +109,7 @@ export const inspect = (/**@type any*/ thing) => console.log(toObject(thing));
 /**@template T @returns T*/
 const frozen = (/**@type T*/ obj) => (Object.setPrototypeOf(obj, null), Object.freeze(obj));
 
-const compose = (/**@type any*/ definition) => {
+const compose = (/**@type any*/ definition, /**@type boolean*/ trait = false) => {
 	/**@type Set<key>*/
 	const keys = new Set();
 	const prototype = Object.create(null);
@@ -116,6 +128,8 @@ const compose = (/**@type any*/ definition) => {
 	const extending = new Set();
 	/**@type Set<key>*/
 	const badKeys = new Set();
+	/**@type Set<key>*/
+	const undefinedTraitProps = new Set();
 	/**@type string[]*/
 	const errors = [];
 
@@ -169,10 +183,14 @@ const compose = (/**@type any*/ definition) => {
 		if (keys.has(key)) { errors.push('- Cannot define property for \'' + String(key) + '\' as it already exists within the Struct.'); return; }
 		keys.add(key);
 		badKeys.delete(key);
+		undefinedTraitProps.delete(key);
 
-		if (typeof fn !== 'function') { errors.push('- Computed property \'' + String(key) + '\' must be a getter function.'); return; }
+		let desc;
+		if (trait && fn == null) {
+			desc = { value: undefined, enumerable: true };
+		} else if (typeof fn !== 'function') { errors.push('- Computed property \'' + String(key) + '\' must be a getter function.'); return; }
 
-		const desc = {
+		desc ??= {
 			get: /**@this any*/ function () { return (this === prototype ? undefined : fn.call(this, this)); },
 			enumerable: true
 		};
@@ -191,10 +209,14 @@ const compose = (/**@type any*/ definition) => {
 		if (keys.has(key)) { errors.push('- Cannot define property for \'' + String(key) + '\' as it already exists within the Struct.'); return; }
 		keys.add(key);
 		badKeys.delete(key);
+		undefinedTraitProps.delete(key);
 
-		if (typeof fn !== 'function') { errors.push('- Memoised property \'' + String(key) + '\' must be a getter function.'); return; }
+		let desc;
+		if (trait && fn == null) {
+			desc = { value: undefined, enumerable: true };
+		} else if (typeof fn !== 'function') { errors.push('- Memoised property \'' + String(key) + '\' must be a getter function.'); return; }
 
-		const desc = {
+		desc ??= {
 			get: /**@this any*/ function () {
 				if (this === prototype) return undefined;
 				if (key in this[Values])
@@ -297,10 +319,14 @@ const compose = (/**@type any*/ definition) => {
 		if (keys.has(key)) { errors.push('- Cannot define property for \'' + String(key) + '\' as it already exists within the Struct.'); return; }
 		keys.add(key);
 		badKeys.delete(key);
+		undefinedTraitProps.delete(key);
 
-		if (typeof val !== 'function') { errors.push('- Method \'' + String(key) + '\' must be a function.'); return; }
+		let desc;
+		if (trait && val == null) {
+			desc = { value: undefined, enumerable: false };
+		} else if (typeof val !== 'function') { errors.push('- Method \'' + String(key) + '\' must be a function.'); return; }
 
-		const desc = {
+		desc ??= {
 			get: function () { return (this === prototype) ? val : val.bind(this); },
 			enumerable: false
 		};
@@ -409,6 +435,9 @@ const compose = (/**@type any*/ definition) => {
 							}
 							i++;
 						}
+
+						if (desc.type === 'method' || desc.type === 'memo' || desc.type === 'computed' && properties[key] == null)
+							undefinedTraitProps.add(key);
 					}
 				}
 			}
@@ -446,6 +475,11 @@ const compose = (/**@type any*/ definition) => {
 	if (badKeys.size) {
 		for (const key of badKeys)
 			errors.push('- Collison in extend: Key \'' + String(key) + '\' differs between two extended structs, and is not overriden in the extending struct.');
+	}
+
+	if (undefinedTraitProps.size) {
+		for (const key of undefinedTraitProps)
+			errors.push('- Struct extends \'' + String(key) + '\' but does not provide an implementation, and it has no default. An implementation must be provided.');
 	}
 
 	if (errors.length) throw new Error('One or more errors in struct template:\n' + errors.join('\n'));
@@ -743,7 +777,7 @@ export const Trait = (() => {
 		if (definition != null && ('init' in definition))
 			throw new Error('Traits cannot take \'init\' function.');
 
-		const { prototype, extending, template, defaults, toAssign, toDefine } = compose(definition);
+		const { prototype, extending, template, defaults, toAssign, toDefine } = compose(definition, true);
 
 		const trait = Object.create(null);
 		extending.add(trait);
