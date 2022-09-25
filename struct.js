@@ -16,11 +16,11 @@ const ToDefine = Symbol();
 	source: Trait[];
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<Either>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key> }} Trait*/
+/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<Either>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key>; [Constructor]: (StructConstructor | null); }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
-/**@typedef {{ [Constructor]: StructConstructor; [Values]: Record<PropertyKey, any>; [ key: PropertyKey ]: any; }} Instance*/
+/**@typedef {{ [Values]: Record<PropertyKey, any>; [ key: PropertyKey ]: any; }} Instance*/
 /**@typedef {Trait | Instance} Either*/
 
 
@@ -49,6 +49,7 @@ const isInstance = (/**@type unknown*/ thing) => (
 	thing != null && (typeof thing === 'object')
 	//@ts-ignore
 	&& (thing[Constructor] != null)
+	&& !Object.hasOwn(thing, Prototype)
 );
 
 /**@returns {thing is Trait}*/
@@ -60,7 +61,8 @@ const isTrait = (/**@type unknown*/ thing) => (
 /**@returns {thing is (Trait | Instance)}*/
 export const isStruct = (/**@type unknown*/ thing) => (
 	thing != null && (typeof thing === 'object')
-	&& (Object.hasOwn(thing, Prototype) || Object.hasOwn(thing, Constructor))
+	//@ts-ignore
+	&& (thing[Constructor] != null || Object.hasOwn(thing, Prototype))
 );
 
 export const _extends = (/**@type Either*/ struct, /**@type Trait[]*/ ...traits) => {
@@ -449,8 +451,7 @@ const compose = (/**@type any*/ definition) => {
 	if (errors.length) throw new Error('One or more errors in struct template:\n' + errors.join('\n'));
 
 	Object.defineProperties(prototype, properties);
-	Object.freeze(prototype); Object.freeze(extending);
-	Object.freeze(template); Object.freeze(defaults);
+	Object.freeze(extending); Object.freeze(template); Object.freeze(defaults);
 
 	return {
 		prototype, extending, template, defaults,
@@ -475,7 +476,6 @@ export const Struct = (() => {
 				throw new Error('Values to constructor must be an object.');
 
 			const struct = Object.create(prototype);
-			Object.defineProperty(struct, Constructor, { value: structConstructor });
 
 			/**@type any*/
 			const vals = needsValues && Object.create(defaults);
@@ -526,6 +526,8 @@ export const Struct = (() => {
 		} else constructor = structConstructor, Object.defineProperty(constructor, 'override', { value: null });
 
 		extending.add(constructor);
+		Object.defineProperty(prototype, Constructor, { value: constructor });
+		Object.freeze(prototype);
 
 		Object.defineProperties(constructor, {
 			[Symbol.hasInstance]: { value: (/**@type any*/ instance) => {
@@ -601,7 +603,6 @@ export const Struct = (() => {
 
 			const defaults = root[Defaults], prototype = root[Prototype];
 			const newStruct = Object.create(prototype);
-			Object.defineProperty(newStruct, Constructor, { value: root });
 			const newVals = ((struct[Values] != null) ? Object.create(defaults) : null);
 
 			const toDefine = root[ToDefine];
@@ -755,6 +756,7 @@ export const Trait = (() => {
 			}},
 
 			[Prototype]: { value: prototype },
+			[Constructor]: { value: null },
 			[Extending]: { value: extending },
 			[Template]: { value: template },
 			[Defaults]: { value: defaults },
