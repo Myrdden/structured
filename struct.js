@@ -507,22 +507,20 @@ export const Struct = (() => {
 
 		/**@type any*/
 		let constructor;
-		if (definition.override !== undefined) {
-			if (typeof definition.override !== 'function')
+		if (definition.init !== undefined) {
+			if (typeof definition.init !== 'function')
 				throw new Error('Custom constructor must be a function.');
 
-			const fn = definition.override;
+			const fn = definition.init;
 			constructor = function (/**@type any*/ values) {
 				if (values == null)
 					values = {};
 				else if (typeof values !== 'object')
 					throw new Error('Values to constructor must be an object.');
 
-				const result = fn(values);
-				return structConstructor(result ?? values);
+				fn(values);
+				return structConstructor(values);
 			};
-
-			Object.defineProperty(constructor, 'override', { value: fn });
 		} else constructor = structConstructor, Object.defineProperty(constructor, 'override', { value: null });
 
 		extending.add(constructor);
@@ -740,6 +738,9 @@ export default Struct;
 
 export const Trait = (() => {
 	const Trait = function (/**@type any*/ definition) {
+		if (definition != null && ('init' in definition))
+			throw new Error('Traits cannot take \'init\' function.');
+
 		const { prototype, extending, template, defaults, toAssign, toDefine } = compose(definition);
 
 		const trait = Object.create(null);
