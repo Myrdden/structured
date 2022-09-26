@@ -16,7 +16,7 @@ const ToDefine = Symbol();
 	source: Trait[];
 }} TemplateDesc*/
 //@ts-ignore
-/**@typedef {{ [Prototype]: object; [Extending]: ReadonlySet<(Trait | StructConstructor)>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key>; [Constructor]: (StructConstructor | null); }} Trait*/
+/**@typedef {{ [Prototype]: Record<key, any>; [Extending]: ReadonlySet<(Trait | StructConstructor)>; [Template]: ReadonlyMap<key, TemplateDesc>; [Defaults]: Record<key, any>; [ToAssign]: ReadonlySet<key>; [ToDefine]: ReadonlySet<key>; [Constructor]: (StructConstructor | null); }} Trait*/
 //@ts-ignore
 /**@typedef {Trait & { (values: object): object; }} StructConstructor*/
 //@ts-ignore
@@ -502,42 +502,64 @@ export const Struct = (() => {
 		// ----- CREATE CONSTRUCTOR -----
 
 		/**@type StructConstructor*/
-		//@ts-ignore
-		const structConstructor = function (/**@type any*/ values) {
-			if (values == null)
-				values = {};
-			else if (typeof values !== 'object')
-				throw new Error('Values to constructor must be an object.');
+		let structConstructor;
+		if (needsValues) {
+			//@ts-ignore
+			structConstructor = function (/**@type any*/ values) {
+				if (values == null)
+					values = {};
+				else if (typeof values !== 'object')
+					throw new Error('Values to constructor must be an object.');
 
-			const struct = Object.create(prototype);
+				const struct = Object.create(prototype);
 
-			/**@type any*/
-			const vals = needsValues && Object.create(defaults);
+				/**@type any*/
+				const vals = needsValues && Object.create(defaults);
 
-			for (const key of toAssign) {
-				if (values[key] !== undefined) {
-					//@ts-ignore
-					if (values[key] !== defaults[key] && values[key] !== Object.prototype[key]) vals[key] = values[key];
-				} else if (!(key in defaults)) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
-			}
+				for (const key of toAssign) {
+					if (values[key] !== undefined) {
+						//@ts-ignore
+						if (values[key] !== defaults[key] && values[key] !== Object.prototype[key]) vals[key] = values[key];
+					} else if (!(key in defaults)) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
+				}
 
-			for (const key of toDefine) {
-				if (values[key] !== undefined) {
-					//@ts-ignore
-					if (values[key] !== prototype[key] && values[key] !== Object.prototype[key]) {
-							Object.defineProperty(struct, key, {
-								value: values[key],
-								enumerable: true,
-								writable: false
-							});
-					}
-				} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
-			}
+				for (const key of toDefine) {
+					if (values[key] !== undefined) {
+						//@ts-ignore
+						if (values[key] !== prototype[key] && values[key] !== Object.prototype[key]) {
+							struct[key] = values[key];
+						}
+					} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
+				}
 
-			if (needsValues) Object.defineProperty(struct, Values, { value: vals });
+				if (needsValues) Object.defineProperty(struct, Values, { value: vals });
 
-			return Object.seal(struct);
-		};
+				return Object.freeze(struct);
+			};
+		} else {
+			//@ts-ignore
+			structConstructor = function (/**@type any*/ values) {
+				if (values == null)
+					values = {};
+				else if (typeof values !== 'object')
+					throw new Error('Values to constructor must be an object.');
+
+				const struct = Object.create(prototype);
+
+				for (const key of toDefine) {
+					if (values[key] !== undefined) {
+						//@ts-ignore
+						if (values[key] !== prototype[key] && values[key] !== Object.prototype[key]) {
+							struct[key] = values[key];
+						}
+					} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
+
+					return Object.freeze(struct);
+				}
+			};
+		}
+
+		Object.freeze(structConstructor);
 
 		/**@type any*/
 		let constructor;
@@ -555,7 +577,7 @@ export const Struct = (() => {
 				fn(values);
 				return structConstructor(values);
 			};
-		} else constructor = structConstructor, Object.defineProperty(constructor, 'override', { value: null });
+		} else constructor = structConstructor;
 
 		extending.add(constructor);
 		Object.defineProperty(prototype, Constructor, { value: constructor });
@@ -606,7 +628,6 @@ export const Struct = (() => {
 			}
 		}
 
-		Object.freeze(structConstructor);
 		return Object.freeze(constructor);
 	};
 
@@ -635,71 +656,82 @@ export const Struct = (() => {
 
 			const defaults = root[Defaults], prototype = root[Prototype];
 			const newStruct = Object.create(prototype);
-			const newVals = ((struct[Values] != null) ? Object.create(defaults) : null);
 
 			const toDefine = root[ToDefine];
 			for (const key of toDefine) {
 				let val;
-				for (let j = values.length; j--;)
+				for (let j = values.length; j--;) {
 					//@ts-ignore
-					if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key]) { val = values[j][key]; break; }
+					if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key])
+						{ val = values[j][key]; break; }
+				}
 
-				if (val === undefined) val = Object.hasOwn(struct, key) ? struct[key] : undefined;
+				if (val === undefined)
+					val = Object.hasOwn(struct, key) ? struct[key] : undefined;
 
-				//@ts-ignore
 				if (val !== undefined && val !== prototype[key]) {
-					Object.defineProperty(newStruct, key, {
-						value: val,
-						enumerable: true,
-						writable: false
-					});
+					newStruct[key] = val;
 				}
 			}
 
-			const toAssign = root[ToAssign];
-			for (const key of toAssign) {
-				let val;
-				for (let j = values.length; j--;)
-					//@ts-ignore
-					if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key]) { val = values[j][key]; break; }
+			if (struct[Values] != null) {
+				const newVals = Object.create(defaults);
 
-				if (val === undefined) val = struct[Values][key];
-				if (val !== undefined && val !== defaults[key]) newVals[key] = val;
+				const toAssign = root[ToAssign];
+				for (const key of toAssign) {
+					let val;
+					for (let j = values.length; j--;) {
+						//@ts-ignore
+						if (values[j][key] !== undefined && values[j][key] !== Object.prototype[key])
+							{ val = values[j][key]; break; }
+					}
+
+					if (val === undefined) val = struct[Values][key];
+					if (val !== undefined && val !== defaults[key]) newVals[key] = val;
+				}
+
+				Object.defineProperty(newStruct, Values, { value: newVals });
 			}
 
-			if (newVals != null) Object.defineProperty(newStruct, Values, { value: newVals });
-
-			return Object.seal(newStruct);
+			return Object.freeze(newStruct);
 		}},
 
 		patch: { value: (/**@type unknown*/ struct, /**@type any*/ values, /**@type any*/ keyedValue) => {
 			if (!isInstance(struct))
 				throw new Error('First argument to Struct.patch must be a Struct.');
 			const root = struct[Constructor];
+			let direct = false;
+			if (typeof values === 'number')
+				direct = true, values = String(values);
+			else if (typeof values === 'string' || typeof values === 'symbol')
+				direct = true;
 
 			const toAssign = root[ToAssign];
 			const toDefine = root[ToDefine];
-			if (typeof values === 'string' || typeof values === 'symbol') {
+			if (direct) {
 				if (!toDefine.has(values) && !toAssign.has(values)) return struct;
 				if (keyedValue === undefined) throw new Error('No value provided.');
 			} else if (!isPlainObj(values)) throw new Error('nyet');
 
 			const newStruct = Object.create(struct);
-			const newVals = ((struct[Values] != null) ? Object.create(root[Defaults]) : null);
+			let newVals;
 
-			if (newVals != null) {
+			if (struct[Values] != null) {
+				newVals = Object.create(root[Defaults]);
 				for (const key of toAssign)
 					if (struct[Values][key] !== undefined) newVals[key] = struct[Values][key];
+
+				Object.defineProperty(newStruct, Values, { value: newVals });
+
+				if (direct && toAssign.has(values)) {
+					newVals[values] = keyedValue;
+					return Object.freeze(newStruct);
+				}
 			}
 
-			if (typeof values === 'string' || typeof values === 'symbol') {
-				if (toDefine.has(values)) {
-					Object.defineProperty(newStruct, values, {
-						value: keyedValue,
-						enumerable: true,
-						writable: false
-					});
-				} else newVals[values] = keyedValue;
+			if (direct) {
+				if (toDefine.has(values))
+					newStruct[values] = keyedValue;
 			} else {
 				const names = Object.getOwnPropertyNames(values);
 				const symbols = Object.getOwnPropertySymbols(values);
@@ -710,22 +742,15 @@ export const Struct = (() => {
 					if (!useSymbols && i === 0)
 						(i = symbols.length, useSymbols = true);
 
-					//@ts-ignore
-					if (values[key] === undefined || values[key] === Object.prototype[key]) continue;
+					if (values[key] === undefined) continue;
 
 					if (toDefine.has(key)) {
-						Object.defineProperty(newStruct, key, {
-							value: values[key],
-							enumerable: true,
-							writable: false
-						});
+						newStruct[key] = values[key];
 					} else if (toAssign.has(key)) newVals[key] = values[key];
 				}
 			}
 
-			if (newVals != null) Object.defineProperty(newStruct, Values, { value: newVals });
-
-			return Object.seal(newStruct);
+			return Object.freeze(newStruct);
 		}},
 
 		forEach: { value: (/**@type unknown*/ object, /**@type unknown*/ fn, /**@type unknown*/ thisArg) => {
@@ -778,6 +803,7 @@ export const Trait = (() => {
 			throw new Error('Traits cannot take \'init\' function.');
 
 		const { prototype, extending, template, defaults, toAssign, toDefine } = compose(definition, true);
+		Object.freeze(prototype);
 
 		const trait = Object.create(null);
 		extending.add(trait);
