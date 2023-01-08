@@ -567,9 +567,9 @@ export const Struct = (() => {
 							});
 						}
 					} else if (prototype[key] === undefined) throw new Error('No value was provided for \'' + String(key) + '\' and no default value exists for the struct.');
-
-					return Object.freeze(struct);
 				}
+
+				return Object.freeze(struct);
 			};
 		}
 
@@ -725,8 +725,7 @@ export const Struct = (() => {
 			const toAssign = root[ToAssign];
 			const toDefine = root[ToDefine];
 			if (direct) {
-				if (!toDefine.has(values) && !toAssign.has(values)) return struct;
-				if (keyedValue === undefined) throw new Error('No value provided.');
+				if (keyedValue === undefined || !toDefine.has(values) && !toAssign.has(values)) return struct;
 			} else if (!isPlainObj(values)) throw new Error('nyet');
 
 			const newStruct = Object.create(struct);
@@ -764,7 +763,10 @@ export const Struct = (() => {
 					if (values[key] === undefined) continue;
 
 					if (toDefine.has(key)) {
-						newStruct[key] = values[key];
+						Object.defineProperty(newStruct, key, {
+							value: values[key],
+							enumerable: true
+						});
 					} else if (toAssign.has(key)) newVals[key] = values[key];
 				}
 			}

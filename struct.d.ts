@@ -9,7 +9,7 @@ export type Identity <T> = T extends (...args: any[]) => infer R ? R : T;
 
 type func <T = any> = (...args: any[]) => T;
 type UtoI <U> = (
-	(U extends any ? (k: U) => void: never) extends ((k: infer I) => void) ? I : never
+	(U extends any ? (k: U) => void : never) extends ((k: infer I) => void) ? I : never
 );
 
 type StructExtends = (object | func<object> | (object | func<object>)[]);
@@ -154,3 +154,4 @@ export const Trait: {
 /** Special implementation of JSON.stringify for use with Structs */
 export const stringify: typeof JSON.stringify;
 export const toObject: (struct: object) => object;
+export const _extends: (struct: object, ...traits: object[]) => boolean;
